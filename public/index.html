@@ -85,6 +85,8 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
         <option value="10">10 MI</option><option value="25">25 MI</option><option value="50">50 MI</option>
         <option value="100">100 MI</option><option value="150">150 MI</option>
       </select>
+      <button class="btn" id="milBtn" title="Show only military aircraft"><span>MIL</span></button>
+      <button class="btn" id="pathBtn" title="Show flight paths"><span>PATH</span></button>
       <button class="btn" id="wakeBtn" title="Keep screen on"><span>&#9728;</span></button>
     </div>
   </header>
@@ -124,7 +126,8 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
 
 <script>
 const PINK = '#ff2d95', CYAN = '#4fe3ff', AMBER = '#ffb020', RED = '#ff1a3c';
-const DEFAULT = { lat: 34.5794, lon: -118.1165, label: 'Palmdale', mi: 50 };
+const DEFAULT = { lat: 34.5794, lon: -118.1165, label: 'Palmdale', mi: 50, mil: false, path: false };
+const TRAIL_MAX = 360; // about 30 minutes of positions at one update every 5 s
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const $ = id => document.getElementById(id);
 
@@ -193,6 +196,7 @@ const kindOf = p => {
   return 'jet';
 };
 
+const visible = () => data.ac.filter(p => p.dist <= settings.mi && (!settings.mil || p.mil));
 const isEmg = p => ['7500', '7600', '7700'].includes(p.squawk);
 const isClose = p => !p.ground && p.alt != null && p.alt < 5000 && p.dist < 8;
 const blink = () => Math.floor(Date.now() / 400) % 2;
@@ -262,7 +266,7 @@ function updateTrails() {
     const t = trails.get(p.id) || [];
     const last = t[t.length - 1];
     if (!last || last.dist !== p.dist || last.brg !== p.brg) t.push({ dist: p.dist, brg: p.brg });
-    if (t.length > 10) t.shift();
+    if (t.length > TRAIL_MAX) t.shift();
     trails.set(p.id, t);
   }
   for (const id of trails.keys()) if (!seen.has(id)) trails.delete(id);
@@ -271,15 +275,20 @@ function updateTrails() {
 // ---------- rendering ----------
 function renderInfo() {
   const age = lastOk ? Math.round((Date.now() - lastOk) / 1000) : null;
-  let s = `${data.ac.length} aircraft &middot; ${esc(settings.label)} &middot; ${settings.mi} mi`;
+  let s = `${visible().length} ${settings.mil ? 'military' : 'aircraft'} &middot; ${esc(settings.label)} &middot; ${settings.mi} mi`;
   s += '<br>' + (data.error && (!lastOk || age > 15) ? '<span style="color:#ff6b6b">NO DATA: ' + esc(data.error) + '</span>'
     : lastOk ? esc(data.source || '') + ' &middot; updated ' + age + 's ago' : 'Connecting...');
   $('info').innerHTML = s;
 }
 
 function renderList() {
-  const list = data.ac.filter(p => p.dist <= settings.mi).slice(0, 40);
-  if (!list.length) { $('list').innerHTML = '<div class="empty">No aircraft in range right now. Try a bigger radius.</div>'; return; }
+  const list = visible().slice(0, 40);
+  if (!list.length) {
+    $('list').innerHTML = settings.mil
+      ? '<div class="empty">No military aircraft broadcasting in range right now. Try a bigger radius, or turn off MIL.</div>'
+      : '<div class="empty">No aircraft in range right now. Try a bigger radius.</div>';
+    return;
+  }
   $('list').innerHTML = list.map(p => {
     const cls = isEmg(p) ? 'emg' : p.mil ? 'mil' : isClose(p) ? 'close' : '';
     return `<div class="fl ${cls} ${p.id === selected ? 'sel' : ''}" data-id="${esc(p.id)}">
@@ -382,15 +391,31 @@ function drawRadar() {
   c.fillStyle = CYAN; c.shadowColor = CYAN; c.shadowBlur = 10; c.beginPath(); c.arc(cx, cy, 5, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
 
   blips = [];
-  const ac = data.ac.filter(p => p.dist <= max);
+  const ac = visible();
   for (let i = ac.length - 1; i >= 0; i--) {
     const p = ac[i], col = colorOf(p), [x, y] = pos(p.dist, p.brg);
     const t = trails.get(p.id) || [];
-    t.slice(0, -1).forEach((pt, j) => {
-      const [tx, ty] = pos(pt.dist, pt.brg);
-      c.fillStyle = col; c.globalAlpha = 0.15 + 0.5 * j / t.length;
-      c.beginPath(); c.arc(tx, ty, 1.8, 0, Math.PI * 2); c.fill();
-    });
+    if (settings.path || p.id === selected) {
+      // Flight path: solid line where it has been, dashed line where it's heading (next ~3 minutes).
+      if (t.length > 1) {
+        c.strokeStyle = col; c.lineWidth = p.id === selected ? 2.2 : 1.5; c.globalAlpha = 0.55;
+        c.beginPath();
+        t.forEach((pt, j) => { const [tx, ty] = pos(pt.dist, pt.brg); j ? c.lineTo(tx, ty) : c.moveTo(tx, ty); });
+        c.lineTo(x, y); c.stroke();
+      }
+      if (p.track != null && p.mph && !p.ground) {
+        const ahead = (p.mph / 20) * (R / max), a = p.track * Math.PI / 180;
+        c.setLineDash([5, 5]); c.globalAlpha = 0.45; c.strokeStyle = col; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.sin(a) * ahead, y - Math.cos(a) * ahead); c.stroke();
+        c.setLineDash([]);
+      }
+    } else {
+      t.slice(-6, -1).forEach((pt, j, arr) => {
+        const [tx, ty] = pos(pt.dist, pt.brg);
+        c.fillStyle = col; c.globalAlpha = 0.15 + 0.5 * j / arr.length;
+        c.beginPath(); c.arc(tx, ty, 1.8, 0, Math.PI * 2); c.fill();
+      });
+    }
     c.globalAlpha = 1;
     if (p.id === selected) { c.strokeStyle = CYAN; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 15, 0, Math.PI * 2); c.stroke(); }
     drawPlane(c, x, y, p.track, kindOf(p), col);
@@ -433,6 +458,20 @@ $('locBtn').addEventListener('click', () => {
   }, err => toast(err.code === 1 ? 'Location permission denied.' : 'Could not get your location.'),
   { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
 });
+
+function syncToggles() {
+  $('milBtn').classList.toggle('on', !!settings.mil);
+  $('pathBtn').classList.toggle('on', !!settings.path);
+}
+$('milBtn').addEventListener('click', () => {
+  settings.mil = !settings.mil; saveSettings(); syncToggles(); renderList(); renderInfo();
+  toast(settings.mil ? 'Showing military aircraft only.' : 'Showing all aircraft.');
+});
+$('pathBtn').addEventListener('click', () => {
+  settings.path = !settings.path; saveSettings(); syncToggles();
+  toast(settings.path ? 'Flight paths on. They build up while SKYWATCH stays open.' : 'Flight paths off.');
+});
+syncToggles();
 
 $('wakeBtn').addEventListener('click', async () => {
   if (!('wakeLock' in navigator)) return toast('Keep-awake is not supported in this browser.');
