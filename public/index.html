@@ -46,6 +46,13 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
 .sheet.hidden{display:none}
 .sheet .panel{padding:14px 16px}
 .sheet .cs{font-size:24px}
+.photo{margin:-14px -16px 12px;height:190px;background:#0b0710;position:relative;overflow:hidden;border-radius:9px 9px 0 0}
+.photo img{width:100%;height:100%;object-fit:cover;display:none}
+.nophoto{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:#6a4a80;font-weight:800;letter-spacing:3px;font-size:12px}
+.nophoto b{font-size:44px;color:#3a2448;letter-spacing:0}
+.credit{position:absolute;left:0;bottom:0;padding:4px 10px;font-size:11px;color:#ddd;background:rgba(11,7,16,.75);border-top-right-radius:6px}
+.sheet .credit a{color:#4fe3ff;font-size:11px;letter-spacing:0;font-weight:700}
+.sheet .x{z-index:2;background:rgba(11,7,16,.7);border-radius:6px}
 .x{position:absolute;right:10px;top:8px;background:none;border:0;color:#b48cff;font-size:24px;cursor:pointer;padding:4px 8px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 12px;margin:12px 0}
 .k{font-size:10px;letter-spacing:2px;color:#b48cff;font-weight:700}
@@ -53,13 +60,17 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
 .sheet a{color:#4fe3ff;font-weight:700;text-decoration:none;letter-spacing:1px;font-size:14px}
 .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#ff2d95;color:#140a1a;font-weight:800;padding:10px 16px;border-radius:8px;z-index:20;max-width:90%;text-align:center}
 .toast.hidden{display:none}
+@media (orientation:landscape) and (min-width:761px){
+  .sheet{left:auto;right:24px;transform:none;width:min(480px,calc(41vw - 30px));bottom:24px}
+}
 @media (orientation:portrait),(max-width:760px){
   main{flex-direction:column}
   .radarbox{flex:none;height:min(calc(100vw - 24px),56dvh)}
   .listbox{min-width:0}
   .logo{font-size:24px}
   .legend{display:none}
-  #list{padding-bottom:200px}
+  #list{padding-bottom:380px}
+  .photo{height:160px}
 }
 </style>
 </head>
@@ -92,6 +103,11 @@ canvas{display:block;width:100%;height:100%;touch-action:manipulation}
 
 <div class="sheet hidden chrome" id="sheet"><div class="panel">
   <button class="x" id="closeSheet" aria-label="Close">&times;</button>
+  <div class="photo">
+    <img id="sImg" alt="Aircraft photo">
+    <div class="nophoto" id="sNo"><b>&#9992;</b><span id="sNoTxt">LOADING PHOTO...</span></div>
+    <div class="credit" id="sCredit"></div>
+  </div>
   <div><span class="cs" id="sCall"></span><span class="ty" id="sType"></span></div>
   <div class="sm" id="sDesc"></div>
   <div class="grid">
@@ -237,11 +253,36 @@ function renderList() {
   }).join('');
 }
 
+const photoCache = new Map();
+let photoFor = null;
+async function loadPhoto(p) {
+  photoFor = p.id;
+  const show = d => {
+    if (photoFor !== p.id) return;
+    if (d && d.src) {
+      $('sImg').src = d.src; $('sImg').style.display = 'block'; $('sNo').style.display = 'none';
+      $('sCredit').innerHTML = `&copy; ${esc(d.photographer)} &middot; <a href="${esc(d.link)}" target="_blank" rel="noopener">Planespotters.net</a>`;
+    } else {
+      $('sImg').style.display = 'none'; $('sImg').removeAttribute('src'); $('sNo').style.display = 'flex';
+      $('sNoTxt').textContent = d === undefined ? 'LOADING PHOTO...' : 'NO PHOTO ON FILE';
+      $('sCredit').innerHTML = '';
+    }
+  };
+  if (photoCache.has(p.id)) return show(photoCache.get(p.id));
+  show(undefined);
+  try {
+    const r = await fetch(`/api/photo?hex=${encodeURIComponent(p.id)}&reg=${encodeURIComponent(p.reg || '')}`);
+    const d = r.ok ? await r.json() : null;
+    photoCache.set(p.id, d); show(d);
+  } catch { show(null); }
+}
+
 function renderSheet() {
-  if (!selected) { $('sheet').classList.add('hidden'); return; }
+  if (!selected) { $('sheet').classList.add('hidden'); photoFor = null; return; }
   const p = data.ac.find(a => a.id === selected);
   $('sheet').classList.remove('hidden');
   if (!p) { $('sDesc').textContent = 'Out of range or no longer broadcasting.'; return; }
+  if (photoFor !== p.id) loadPhoto(p);
   $('sCall').textContent = p.call;
   $('sType').textContent = [p.type, p.reg && p.reg !== p.call ? p.reg : '', p.mil ? 'MIL' : ''].filter(Boolean).join(' · ');
   $('sDesc').textContent = describe(p);
