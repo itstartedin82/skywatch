@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0710">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>SKYWATCH</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0b0710;color:#fff;font-family:system-ui,Roboto,Arial,sans-serif;-webkit-tap-highlight-color:transparent}
+body{background-image:repeating-linear-gradient(135deg,rgba(255,0,140,.05) 0 2px,transparent 2px 14px);overflow:hidden}
+.app{display:flex;flex-direction:column;height:100dvh;padding:calc(10px + env(safe-area-inset-top)) 12px calc(10px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.logo{font-family:"Arial Black",Impact,system-ui,sans-serif;font-weight:900;font-style:italic;font-size:30px;letter-spacing:3px;color:#ff2d95;text-shadow:3px 3px 0 #6a1bd1,0 0 18px rgba(255,45,149,.6);line-height:1}
+.info{flex:1;min-width:180px;font-size:11px;letter-spacing:2px;color:#b48cff;font-weight:700;line-height:1.5;text-transform:uppercase}
+.controls{display:flex;gap:6px}
+.btn,select{background:linear-gradient(#fafafa,#8a8a96 35%,#e6e6ee 55%,#55555f);border:0;border-radius:8px;padding:2px;cursor:pointer;font:inherit}
+.btn span,select{display:block;background:#140a1a;color:#ff2d95;border-radius:6px;padding:8px 12px;font-weight:900;font-style:italic;letter-spacing:2px;font-size:13px}
+select{padding:10px 8px;appearance:none;-webkit-appearance:none;border:2px solid #b8b8c4}
+.btn.on span{background:#ff2d95;color:#140a1a}
+main{flex:1;display:flex;gap:12px;min-height:0}
+.chrome{background:linear-gradient(#fafafa,#8a8a96 35%,#e6e6ee 55%,#55555f);padding:3px;border-radius:12px;min-height:0}
+.panel{background:#140a1a;border-radius:9px;height:100%;position:relative;overflow:hidden}
+.radarbox{flex:1.4}
+.listbox{flex:1;min-width:280px}
+canvas{display:block;width:100%;height:100%;touch-action:manipulation}
+#list{height:100%;overflow-y:auto;padding:4px 12px}
+.fl{border-bottom:1px solid #2a1534;padding:9px 4px;cursor:pointer;border-radius:6px}
+.fl:hover,.fl.sel{background:#22122b}
+.cs{font-family:ui-monospace,"Courier New",monospace;font-weight:700;font-size:19px}
+.ty{font-size:12px;color:#b48cff;font-weight:700;letter-spacing:1px;margin-left:6px}
+.sm{display:block;font-size:13px;color:#ff8cc6;margin-top:2px}
+.ds{display:block;font-size:12px;color:#c9b6ff;margin-top:2px;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fl.close .cs{color:#ff2d95;text-shadow:0 0 8px #ff2d95}
+.fl.mil .cs{color:#ffb020}
+.fl.emg .cs{color:#ff1a3c;text-shadow:0 0 10px #ff1a3c}
+.empty{color:#9a86b0;padding:16px 4px;font-size:14px;line-height:1.5}
+.legend{position:absolute;left:12px;bottom:10px;font-size:11px;letter-spacing:1px;color:#9a86b0;line-height:1.7;pointer-events:none}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.sheet{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(520px,calc(100% - 24px));z-index:10}
+.sheet.hidden{display:none}
+.sheet .panel{padding:14px 16px}
+.sheet .cs{font-size:24px}
+.x{position:absolute;right:10px;top:8px;background:none;border:0;color:#b48cff;font-size:24px;cursor:pointer;padding:4px 8px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 12px;margin:12px 0}
+.k{font-size:10px;letter-spacing:2px;color:#b48cff;font-weight:700}
+.v{font-family:ui-monospace,"Courier New",monospace;font-size:17px;font-weight:700}
+.sheet a{color:#4fe3ff;font-weight:700;text-decoration:none;letter-spacing:1px;font-size:14px}
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#ff2d95;color:#140a1a;font-weight:800;padding:10px 16px;border-radius:8px;z-index:20;max-width:90%;text-align:center}
+.toast.hidden{display:none}
+@media (orientation:portrait),(max-width:760px){
+  main{flex-direction:column}
+  .radarbox{flex:none;height:min(calc(100vw - 24px),56dvh)}
+  .listbox{min-width:0}
+  .logo{font-size:24px}
+  .legend{display:none}
+  #list{padding-bottom:200px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">SKYWATCH</div>
+    <div class="info" id="info">Scanning...</div>
+    <div class="controls">
+      <button class="btn" id="locBtn" title="Use my location"><span>&#9673; LOCATE</span></button>
+      <select id="radius" title="Radius" aria-label="Radius">
+        <option value="10">10 MI</option><option value="25">25 MI</option><option value="50">50 MI</option>
+        <option value="100">100 MI</option><option value="150">150 MI</option>
+      </select>
+      <button class="btn" id="wakeBtn" title="Keep screen on"><span>&#9728;</span></button>
+    </div>
+  </header>
+  <main>
+    <div class="chrome radarbox"><div class="panel">
+      <canvas id="radar"></canvas>
+      <div class="legend">
+        <div><i style="background:#ff2d95"></i>LOW &amp; CLOSE</div>
+        <div><i style="background:#ffb020"></i>MILITARY</div>
+        <div><i style="background:#ff1a3c"></i>EMERGENCY</div>
+      </div>
+    </div></div>
+    <div class="chrome listbox"><div class="panel"><div id="list"></div></div></div>
+  </main>
+</div>
+
+<div class="sheet hidden chrome" id="sheet"><div class="panel">
+  <button class="x" id="closeSheet" aria-label="Close">&times;</button>
+  <div><span class="cs" id="sCall"></span><span class="ty" id="sType"></span></div>
+  <div class="sm" id="sDesc"></div>
+  <div class="grid">
+    <div><div class="k">ALTITUDE</div><div class="v" id="sAlt"></div></div>
+    <div><div class="k">SPEED</div><div class="v" id="sSpd"></div></div>
+    <div><div class="k">CLIMB</div><div class="v" id="sVs"></div></div>
+    <div><div class="k">HEADING</div><div class="v" id="sHdg"></div></div>
+    <div><div class="k">DISTANCE</div><div class="v" id="sDist"></div></div>
+    <div><div class="k">SQUAWK</div><div class="v" id="sSq"></div></div>
+  </div>
+  <a id="sLink" target="_blank" rel="noopener">OPEN ON LIVE GLOBE &#8599;</a>
+</div></div>
+<div class="toast hidden" id="toast"></div>
+
+<script>
+const PINK = '#ff2d95', CYAN = '#4fe3ff', AMBER = '#ffb020', RED = '#ff1a3c';
+const DEFAULT = { lat: 34.5794, lon: -118.1165, label: 'Palmdale', mi: 50 };
+const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const $ = id => document.getElementById(id);
+
+let settings = loadSettings();
+let data = { ac: [] }, lastOk = 0, selected = null, sweep = 0, blips = [], wakeLock = null;
+const trails = new Map();
+
+function loadSettings() {
+  try { return { ...DEFAULT, ...JSON.parse(localStorage.getItem('skywatch') || '{}') }; }
+  catch { return { ...DEFAULT }; }
+}
+function saveSettings() { try { localStorage.setItem('skywatch', JSON.stringify(settings)); } catch {} }
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dir = b => DIRS[Math.round(b / 45) % 8];
+const commas = n => Math.round(n).toLocaleString('en-US');
+const altTxt = p => p.ground ? 'GROUND' : p.alt == null ? '--' : commas(p.alt) + ' ft';
+// ---------- descriptions ----------
+const AIRLINES = {
+  AAL: 'American Airlines', UAL: 'United Airlines', DAL: 'Delta Air Lines', SWA: 'Southwest Airlines', ASA: 'Alaska Airlines',
+  JBU: 'JetBlue', NKS: 'Spirit Airlines', FFT: 'Frontier Airlines', HAL: 'Hawaiian Airlines', AAY: 'Allegiant Air',
+  SCX: 'Sun Country', MXY: 'Breeze Airways', SKW: 'SkyWest', ENY: 'Envoy Air', RPA: 'Republic Airways', ASH: 'Mesa Airlines',
+  QXE: 'Horizon Air', CPZ: 'Compass Airlines', EDV: 'Endeavor Air', PDT: 'Piedmont Airlines', JIA: 'PSA Airlines',
+  FDX: 'FedEx', UPS: 'UPS Airlines', GTI: 'Atlas Air', ABX: 'ABX Air', ATN: 'Air Transport Intl', CKS: 'Kalitta Air', AJT: 'Amerijet',
+  ACA: 'Air Canada', WJA: 'WestJet', AMX: 'Aeroméxico', VOI: 'Volaris', VIV: 'Viva Aerobus', CMP: 'Copa Airlines', AVA: 'Avianca',
+  BAW: 'British Airways', VIR: 'Virgin Atlantic', AFR: 'Air France', DLH: 'Lufthansa', KLM: 'KLM', IBE: 'Iberia', SWR: 'Swiss',
+  UAE: 'Emirates', QTR: 'Qatar Airways', ETD: 'Etihad', THY: 'Turkish Airlines', JAL: 'Japan Airlines', ANA: 'All Nippon Airways',
+  KAL: 'Korean Air', AAR: 'Asiana', CPA: 'Cathay Pacific', EVA: 'EVA Air', CAL: 'China Airlines', SIA: 'Singapore Airlines',
+  QFA: 'Qantas', ANZ: 'Air New Zealand', PAL: 'Philippine Airlines', FJI: 'Fiji Airways',
+  EJA: 'NetJets', LXJ: 'Flexjet', XOJ: 'XOJet', VJA: 'Vista America', JRE: 'JetReady',
+  RCH: 'US Air Force (Air Mobility)', CNV: 'US Navy', PAT: 'US Army', CGX: 'US Coast Guard', SAM: 'US Air Force (Special Air)'
+};
+const TYPES = {
+  B737: 'Boeing 737-700', B738: 'Boeing 737-800', B739: 'Boeing 737-900', B38M: 'Boeing 737 MAX 8', B39M: 'Boeing 737 MAX 9',
+  B752: 'Boeing 757-200', B753: 'Boeing 757-300', B763: 'Boeing 767-300', B764: 'Boeing 767-400', B772: 'Boeing 777-200',
+  B77W: 'Boeing 777-300ER', B77L: 'Boeing 777-200LR', B788: 'Boeing 787-8', B789: 'Boeing 787-9', B78X: 'Boeing 787-10',
+  B744: 'Boeing 747-400', B748: 'Boeing 747-8', A319: 'Airbus A319', A320: 'Airbus A320', A321: 'Airbus A321',
+  A20N: 'Airbus A320neo', A21N: 'Airbus A321neo', A332: 'Airbus A330-200', A333: 'Airbus A330-300', A339: 'Airbus A330-900neo',
+  A359: 'Airbus A350-900', A35K: 'Airbus A350-1000', A388: 'Airbus A380', BCS3: 'Airbus A220-300', E75L: 'Embraer 175',
+  E170: 'Embraer 170', E190: 'Embraer 190', CRJ2: 'Bombardier CRJ200', CRJ7: 'Bombardier CRJ700', CRJ9: 'Bombardier CRJ900',
+  C172: 'Cessna 172 Skyhawk', C182: 'Cessna 182 Skylane', C152: 'Cessna 152', C208: 'Cessna Caravan', PA28: 'Piper Cherokee',
+  PA32: 'Piper Saratoga', SR22: 'Cirrus SR22', SR20: 'Cirrus SR20', BE36: 'Beechcraft Bonanza', PC12: 'Pilatus PC-12',
+  C25A: 'Cessna Citation CJ2', C56X: 'Cessna Citation Excel', C68A: 'Cessna Citation Latitude', CL35: 'Bombardier Challenger 350',
+  GLF4: 'Gulfstream IV', GLF5: 'Gulfstream V', GLF6: 'Gulfstream G650', GLEX: 'Bombardier Global Express', E55P: 'Embraer Phenom 300',
+  R44: 'Robinson R44', R22: 'Robinson R22', AS50: 'Airbus H125 (AStar)', EC35: 'Airbus H135', EC45: 'Airbus H145', B06: 'Bell 206',
+  B407: 'Bell 407', H60: 'Sikorsky Black Hawk', C17: 'Boeing C-17 Globemaster III', C130: 'Lockheed C-130 Hercules',
+  C30J: 'Lockheed C-130J Super Hercules', K35R: 'Boeing KC-135 Stratotanker', KC46: 'Boeing KC-46 Pegasus', B52: 'Boeing B-52',
+  F16: 'General Dynamics F-16', F18S: 'Boeing F/A-18 Super Hornet', F35: 'Lockheed F-35', T38: 'Northrop T-38 Talon', P8: 'Boeing P-8 Poseidon'
+};
+const HELI_TYPES = new Set(['R44', 'R22', 'R66', 'AS50', 'AS55', 'EC30', 'EC35', 'EC45', 'EC55', 'B06', 'B407', 'B429', 'B412', 'H60', 'S76', 'A109', 'A139', 'H500', 'MD52']);
+const LIGHT_TYPES = new Set(['C150', 'C152', 'C162', 'C170', 'C172', 'C177', 'C182', 'C206', 'C210', 'PA18', 'PA22', 'PA24', 'PA28', 'PA32', 'PA34', 'PA44', 'PA46', 'SR20', 'SR22', 'DA40', 'DA42', 'BE33', 'BE35', 'BE36', 'BE58', 'M20P', 'M20T', 'RV7', 'RV8', 'RV10', 'C208', 'PC12', 'TBM9', 'TBM8', 'P28A']);
+
+const operatorOf = p => {
+  const m = /^([A-Z]{3})\d/.exec(p.call);
+  if (m && AIRLINES[m[1]]) return AIRLINES[m[1]];
+  if (p.owner) return p.owner;
+  if (/^N\d/.test(p.call) || /^N\d/.test(p.reg || '')) return 'Private (US-registered)';
+  return p.mil ? 'Military' : '';
+};
+const modelOf = p => p.desc || TYPES[p.type] || p.type || '';
+const describe = p => [operatorOf(p), modelOf(p)].filter(Boolean).join(' · ') || 'Unknown aircraft';
+const kindOf = p => {
+  if (p.cat === 'A7' || HELI_TYPES.has(p.type) || /HELICOPTER|ROTOR/i.test(p.desc || '')) return 'heli';
+  if (p.cat === 'A1' || p.cat === 'B1' || LIGHT_TYPES.has(p.type)) return 'light';
+  if (p.cat === 'A5' || /^(B74|B77|B78|A33|A34|A35|A38|C17|B52|K35|KC4|B76)/.test(p.type)) return 'heavy';
+  return 'jet';
+};
+
+const isEmg = p => ['7500', '7600', '7700'].includes(p.squawk);
+const isClose = p => !p.ground && p.alt != null && p.alt < 5000 && p.dist < 8;
+const blink = () => Math.floor(Date.now() / 400) % 2;
+const colorOf = p => isEmg(p) ? (blink() ? RED : '#fff') : p.mil ? AMBER : isClose(p) ? PINK : p.ground ? '#6a4a80' : '#e8d8ff';
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3500);
+}
+
+// ---------- data ----------
+async function fetchFlights() {
+  if (document.hidden) return;
+  const nm = Math.round(settings.mi / 1.15078);
+  try {
+    const res = await fetch(`/api/flights?lat=${settings.lat.toFixed(4)}&lon=${settings.lon.toFixed(4)}&r=${nm}`);
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'HTTP ' + res.status);
+    data = d; lastOk = Date.now();
+    updateTrails(); renderList(); renderSheet();
+  } catch (e) {
+    data.error = e.message || String(e);
+  }
+  renderInfo();
+}
+
+function updateTrails() {
+  const seen = new Set();
+  for (const p of data.ac) {
+    seen.add(p.id);
+    const t = trails.get(p.id) || [];
+    const last = t[t.length - 1];
+    if (!last || last.dist !== p.dist || last.brg !== p.brg) t.push({ dist: p.dist, brg: p.brg });
+    if (t.length > 10) t.shift();
+    trails.set(p.id, t);
+  }
+  for (const id of trails.keys()) if (!seen.has(id)) trails.delete(id);
+}
+
+// ---------- rendering ----------
+function renderInfo() {
+  const age = lastOk ? Math.round((Date.now() - lastOk) / 1000) : null;
+  let s = `${data.ac.length} aircraft &middot; ${esc(settings.label)} &middot; ${settings.mi} mi`;
+  s += '<br>' + (data.error && (!lastOk || age > 15) ? '<span style="color:#ff6b6b">NO DATA: ' + esc(data.error) + '</span>'
+    : lastOk ? esc(data.source || '') + ' &middot; updated ' + age + 's ago' : 'Connecting...');
+  $('info').innerHTML = s;
+}
+
+function renderList() {
+  const list = data.ac.filter(p => p.dist <= settings.mi).slice(0, 40);
+  if (!list.length) { $('list').innerHTML = '<div class="empty">No aircraft in range right now. Try a bigger radius.</div>'; return; }
+  $('list').innerHTML = list.map(p => {
+    const cls = isEmg(p) ? 'emg' : p.mil ? 'mil' : isClose(p) ? 'close' : '';
+    return `<div class="fl ${cls} ${p.id === selected ? 'sel' : ''}" data-id="${esc(p.id)}">
+      <span class="cs">${esc(p.call)}</span><span class="ty">${esc(p.type)}${p.mil ? ' MIL' : ''}${isEmg(p) ? ' SQUAWK ' + esc(p.squawk) : ''}</span>
+      <span class="ds">${esc(describe(p))}</span>
+      <span class="sm">${altTxt(p)}${p.mph != null ? ' &middot; ' + p.mph + ' mph' : ''} &middot; ${p.dist.toFixed(1)} mi ${dir(p.brg)}</span></div>`;
+  }).join('');
+}
+
+function renderSheet() {
+  if (!selected) { $('sheet').classList.add('hidden'); return; }
+  const p = data.ac.find(a => a.id === selected);
+  $('sheet').classList.remove('hidden');
+  if (!p) { $('sDesc').textContent = 'Out of range or no longer broadcasting.'; return; }
+  $('sCall').textContent = p.call;
+  $('sType').textContent = [p.type, p.reg && p.reg !== p.call ? p.reg : '', p.mil ? 'MIL' : ''].filter(Boolean).join(' · ');
+  $('sDesc').textContent = describe(p);
+  $('sAlt').textContent = altTxt(p);
+  $('sSpd').textContent = p.mph != null ? p.mph + ' mph' : '--';
+  $('sVs').textContent = p.vs == null ? '--' : (p.vs > 0 ? '+' : '') + commas(p.vs) + ' fpm';
+  $('sHdg').textContent = p.track == null ? '--' : Math.round(p.track) + '° ' + dir(p.track);
+  $('sDist').textContent = p.dist.toFixed(1) + ' mi ' + dir(p.brg);
+  $('sSq').textContent = p.squawk || '--';
+  $('sLink').href = 'https://globe.airplanes.live/?icao=' + encodeURIComponent(p.id.toLowerCase());
+}
+
+// Plane silhouettes, nose pointing up (-y). Mirrored left/right from half-outlines.
+const SHAPES = {
+  jet:   [[0,-10],[1.3,-8.6],[1.5,-3],[9.5,1.8],[9.5,3.3],[1.5,1.2],[1.1,6],[3.8,8.2],[3.8,9.4],[0,8.6]],
+  light: [[0,-9],[1.1,-7.5],[1.1,-4.6],[9.5,-4],[9.5,-2],[1.1,-1.6],[0.8,5.2],[3.8,6],[3.8,7.6],[0,7.2]],
+};
+SHAPES.heavy = SHAPES.jet;
+function drawPlane(c, x, y, track, kind, col) {
+  c.save(); c.translate(x, y);
+  if (track != null) c.rotate(track * Math.PI / 180);
+  c.fillStyle = col; c.strokeStyle = col; c.shadowColor = col; c.shadowBlur = 8;
+  if (kind === 'heli') {
+    c.beginPath(); c.ellipse(0, -1, 3.6, 5, 0, 0, Math.PI * 2); c.fill();
+    c.lineWidth = 2; c.beginPath(); c.moveTo(0, 3); c.lineTo(0, 10); c.moveTo(-2.5, 10); c.lineTo(2.5, 10); c.stroke();
+    c.lineWidth = 1.5; c.beginPath(); c.moveTo(-9, -8); c.lineTo(9, 6); c.moveTo(9, -8); c.lineTo(-9, 6); c.stroke();
+  } else {
+    const pts = SHAPES[kind] || SHAPES.jet, s = kind === 'heavy' ? 1.3 : kind === 'light' ? 0.85 : 1.05;
+    c.scale(s, s); c.beginPath(); c.moveTo(pts[0][0], pts[0][1]);
+    for (let k = 1; k < pts.length; k++) c.lineTo(pts[k][0], pts[k][1]);
+    for (let k = pts.length - 2; k > 0; k--) c.lineTo(-pts[k][0], pts[k][1]);
+    c.closePath(); c.fill();
+  }
+  c.restore();
+}
+
+function drawRadar() {
+  const cv = $('radar'), r = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * r) || cv.height !== Math.round(h * r)) { cv.width = Math.round(w * r); cv.height = Math.round(h * r); }
+  const c = cv.getContext('2d'); c.setTransform(r, 0, 0, r, 0, 0); c.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2 + 6, R = Math.min(w, h) / 2 - 24, max = settings.mi;
+  const pos = (dist, brg) => { const rr = R * dist / max, b = brg * Math.PI / 180; return [cx + Math.sin(b) * rr, cy - Math.cos(b) * rr]; };
+
+  c.strokeStyle = 'rgba(180,140,255,.25)'; c.lineWidth = 1; c.fillStyle = '#6a4a80'; c.font = '11px system-ui'; c.textAlign = 'left';
+  for (let i = 1; i <= 4; i++) {
+    c.beginPath(); c.arc(cx, cy, R * i / 4, 0, Math.PI * 2); c.stroke();
+    c.fillText(Math.round(max * i / 4) + ' mi', cx + 4, cy - R * i / 4 + 12);
+  }
+  c.beginPath(); c.moveTo(cx - R, cy); c.lineTo(cx + R, cy); c.moveTo(cx, cy - R); c.lineTo(cx, cy + R); c.stroke();
+  c.fillStyle = '#b48cff'; c.font = 'bold 14px system-ui'; c.textAlign = 'center'; c.fillText('N', cx, cy - R - 7);
+
+  const grad = c.createConicGradient ? c.createConicGradient(sweep - Math.PI / 2 - 0.6, cx, cy) : null;
+  if (grad) {
+    grad.addColorStop(0, 'rgba(255,45,149,0)'); grad.addColorStop(0.095, 'rgba(255,45,149,.28)'); grad.addColorStop(0.0955, 'rgba(255,45,149,0)');
+    c.fillStyle = grad; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
+  }
+  const sa = sweep - Math.PI / 2;
+  c.strokeStyle = 'rgba(255,45,149,.8)'; c.lineWidth = 2; c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(sa) * R, cy + Math.sin(sa) * R); c.stroke();
+
+  c.fillStyle = CYAN; c.shadowColor = CYAN; c.shadowBlur = 10; c.beginPath(); c.arc(cx, cy, 5, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
+
+  blips = [];
+  const ac = data.ac.filter(p => p.dist <= max);
+  for (let i = ac.length - 1; i >= 0; i--) {
+    const p = ac[i], col = colorOf(p), [x, y] = pos(p.dist, p.brg);
+    const t = trails.get(p.id) || [];
+    t.slice(0, -1).forEach((pt, j) => {
+      const [tx, ty] = pos(pt.dist, pt.brg);
+      c.fillStyle = col; c.globalAlpha = 0.15 + 0.5 * j / t.length;
+      c.beginPath(); c.arc(tx, ty, 1.8, 0, Math.PI * 2); c.fill();
+    });
+    c.globalAlpha = 1;
+    if (p.id === selected) { c.strokeStyle = CYAN; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 15, 0, Math.PI * 2); c.stroke(); }
+    drawPlane(c, x, y, p.track, kindOf(p), col);
+    if (i < 14 || p.id === selected) {
+      c.textAlign = 'left'; c.font = 'bold 11px ui-monospace,"Courier New",monospace';
+      c.fillStyle = col; c.fillText(p.call, x + 13, y - 2);
+      c.fillStyle = '#9a86b0'; c.fillText(p.ground ? 'GND' : p.alt == null ? '' : (p.alt / 1000).toFixed(1) + 'k ft', x + 13, y + 10);
+    }
+    blips.push({ id: p.id, x, y });
+  }
+}
+
+let lastFrame = 0;
+function loop(ts) {
+  if (ts - lastFrame > 33) { sweep = (sweep + 0.035) % (Math.PI * 2); drawRadar(); lastFrame = ts; }
+  requestAnimationFrame(loop);
+}
+
+// ---------- interactions ----------
+function select(id) { selected = id; renderSheet(); renderList(); }
+
+$('radar').addEventListener('click', e => {
+  const rect = e.currentTarget.getBoundingClientRect(), x = e.clientX - rect.left, y = e.clientY - rect.top;
+  let best = null, bd = 28;
+  for (const b of blips) { const d = Math.hypot(b.x - x, b.y - y); if (d < bd) { bd = d; best = b.id; } }
+  select(best);
+});
+$('list').addEventListener('click', e => { const el = e.target.closest('.fl'); if (el) select(el.dataset.id); });
+$('closeSheet').addEventListener('click', () => select(null));
+
+$('radius').value = String(settings.mi);
+$('radius').addEventListener('change', e => { settings.mi = Number(e.target.value); saveSettings(); fetchFlights(); });
+
+$('locBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) return toast('Location is not available in this browser.');
+  toast('Finding your location...');
+  navigator.geolocation.getCurrentPosition(pos => {
+    settings.lat = pos.coords.latitude; settings.lon = pos.coords.longitude; settings.label = 'My location';
+    saveSettings(); trails.clear(); toast('Radar centered on your location.'); fetchFlights();
+  }, err => toast(err.code === 1 ? 'Location permission denied.' : 'Could not get your location.'),
+  { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+});
+
+$('wakeBtn').addEventListener('click', async () => {
+  if (!('wakeLock' in navigator)) return toast('Keep-awake is not supported in this browser.');
+  try {
+    if (wakeLock) { await wakeLock.release(); wakeLock = null; $('wakeBtn').classList.remove('on'); toast('Screen can sleep again.'); }
+    else {
+      wakeLock = await navigator.wakeLock.request('screen'); $('wakeBtn').classList.add('on'); toast('Screen will stay on.');
+      wakeLock.addEventListener('release', () => { wakeLock = null; $('wakeBtn').classList.remove('on'); });
+    }
+  } catch { toast('Could not keep the screen on.'); }
+});
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchFlights(); });
+
+renderInfo(); renderList();
+fetchFlights();
+setInterval(fetchFlights, 5000);
+setInterval(renderInfo, 1000);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
