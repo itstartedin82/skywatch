@@ -207,16 +207,52 @@ function toast(msg) {
 async function fetchFlights() {
   if (document.hidden) return;
   const nm = Math.round(settings.mi / 1.15078);
+  const lat = settings.lat.toFixed(2), lon = settings.lon.toFixed(2);
+  let d = null, err = '';
   try {
-    const res = await fetch(`/api/flights?lat=${settings.lat.toFixed(4)}&lon=${settings.lon.toFixed(4)}&r=${nm}`);
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error || 'HTTP ' + res.status);
+    const res = await fetch(`/api/flights?lat=${lat}&lon=${lon}&r=${nm}`);
+    const j = await res.json();
+    if (res.ok) d = j; else err = j.error || 'HTTP ' + res.status;
+  } catch (e) { err = e.message || String(e); }
+  if (!d) d = await fetchDirect(+lat, +lon, nm);   // fall back to calling the APIs from this device
+  if (d) {
     data = d; lastOk = Date.now();
     updateTrails(); renderList(); renderSheet();
-  } catch (e) {
-    data.error = e.message || String(e);
-  }
+  } else data.error = err;
   renderInfo();
+}
+
+// Direct-from-browser fallback (your own connection, so shared-server rate limits don't apply).
+const DIRECT = [
+  (la, lo, r) => `https://api.airplanes.live/v2/point/${la}/${lo}/${r}`,
+  (la, lo, r) => `https://opendata.adsb.fi/api/v2/lat/${la}/lon/${lo}/dist/${r}`,
+  (la, lo, r) => `https://api.adsb.lol/v2/lat/${la}/lon/${lo}/dist/${r}`,
+];
+function distBrg(lat1, lon1, lat2, lon2) {
+  const R = Math.PI / 180, p1 = lat1 * R, p2 = lat2 * R, dl = (lon2 - lon1) * R;
+  const a = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+  const y = Math.sin(dl) * Math.cos(p2), x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return { dist: 2 * 3958.8 * Math.asin(Math.sqrt(a)), brg: (Math.atan2(y, x) / R + 360) % 360 };
+}
+async function fetchDirect(lat, lon, nm) {
+  const n = v => typeof v === 'number' && isFinite(v) ? v : null;
+  for (const src of DIRECT) {
+    const url = src(lat, lon, nm);
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(7000) });
+      if (!res.ok) continue;
+      const j = await res.json(), list = j.ac || j.aircraft || [];
+      const ac = list.filter(a => n(a.lat) !== null && n(a.lon) !== null).map(a => {
+        const { dist, brg } = distBrg(settings.lat, settings.lon, a.lat, a.lon), hex = String(a.hex || '').toUpperCase();
+        return { id: hex, call: String(a.flight || '').trim() || a.r || hex, reg: a.r || '', type: a.t || '', desc: a.desc || '',
+          owner: a.ownOp || '', cat: a.category || '', alt: a.alt_baro === 'ground' ? 0 : n(a.alt_baro), ground: a.alt_baro === 'ground',
+          mph: n(a.gs) === null ? null : Math.round(a.gs * 1.15078), track: n(a.track), vs: n(a.baro_rate), squawk: a.squawk || '',
+          mil: Boolean((a.dbFlags || 0) & 1), dist: Math.round(dist * 10) / 10, brg: Math.round(brg) };
+      }).sort((a, b) => a.dist - b.dist).slice(0, 150);
+      return { ac, source: new URL(url).host + ' (direct)', radius_mi: Math.round(nm * 1.15078) };
+    } catch {}
+  }
+  return null;
 }
 
 function updateTrails() {

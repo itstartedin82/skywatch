@@ -1,9 +1,11 @@
 import type { Config } from "@netlify/functions"
 
-// Free, no-key ADS-B APIs. The second is a fallback if the first fails.
+// Free, no-key ADS-B APIs, tried in order until one answers.
 const SOURCES = [
   (lat: string, lon: string, r: number) => `https://api.airplanes.live/v2/point/${lat}/${lon}/${r}`,
+  (lat: string, lon: string, r: number) => `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${r}`,
   (lat: string, lon: string, r: number) => `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${r}`,
+  (lat: string, lon: string, r: number) => `https://api.adsb.one/v2/point/${lat}/${lon}/${r}`,
 ]
 
 const rad = (d: number) => (d * Math.PI) / 180
@@ -57,7 +59,7 @@ export default async (req: Request) => {
 
   // Only a rounded (~1 km) location is sent to the upstream API.
   const la = lat.toFixed(2), lo = lon.toFixed(2)
-  let lastErr = "All flight sources unavailable"
+  const errors: string[] = []
 
   for (const src of SOURCES) {
     const url = src(la, lo, r)
@@ -67,22 +69,30 @@ export default async (req: Request) => {
         headers: { "User-Agent": "skywatch-web/1.0" },
         signal: AbortSignal.timeout(8000),
       })
-      if (!res.ok) { lastErr = `${host} returned ${res.status}`; continue }
+      if (!res.ok) { errors.push(`${host} ${res.status}`); continue }
       const data: any = await res.json()
-      const ac = (Array.isArray(data.ac) ? data.ac : [])
+      const list = Array.isArray(data.ac) ? data.ac : Array.isArray(data.aircraft) ? data.aircraft : []
+      const ac = list
         .map((a: any) => trim(a, lat, lon))
         .filter(Boolean)
         .sort((a: any, b: any) => a.dist - b.dist)
         .slice(0, 150)
       return Response.json(
         { ac, source: host, radius_mi: Math.round(r * 1.15078), time: Date.now() },
-        { headers: { "Cache-Control": "no-store" } },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            // Share one upstream call between viewers of the same area for a few seconds.
+            "Netlify-CDN-Cache-Control": "public, s-maxage=5, stale-while-revalidate=10",
+            "Netlify-Vary": "query",
+          },
+        },
       )
     } catch (e) {
-      lastErr = `${host}: ${(e as Error).message}`
+      errors.push(`${host} ${(e as Error).name === "TimeoutError" ? "timeout" : "failed"}`)
     }
   }
-  return Response.json({ error: lastErr, ac: [] }, { status: 502 })
+  return Response.json({ error: errors.join(", ") || "All flight sources unavailable", ac: [] }, { status: 502 })
 }
 
 export const config: Config = { path: "/api/flights" }
